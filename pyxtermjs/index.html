@@ -1,93 +1,115 @@
+<!doctype html>
 <html lang="en">
+
 <head>
   <meta charset="utf-8">
   <title>pyxterm.js</title>
-  <style>
-  html {
-    font-family: arial;
-  }
-  </style>
   <link rel="stylesheet" href="https://unpkg.com/xterm@4.11.0/css/xterm.css" />
+  <script src="https://unpkg.com/xterm@4.11.0/lib/xterm.js"></script>
+  <script src="https://unpkg.com/xterm-addon-fit@0.5.0/lib/xterm-addon-fit.js"></script>
+  <script src="https://unpkg.com/xterm-addon-web-links@0.4.0/lib/xterm-addon-web-links.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.min.js"></script>
+  <style>
+    html {
+      font-family: sans-serif;
+    }
+
+    html,
+    body {
+      height: 100%;
+    }
+
+    #terminal {
+      height: calc(100% - 50px);
+    }
+
+    #status {
+      font-size: small;
+    }
+
+    #status.connected {
+      color: green;
+    }
+
+    #status.disconnected {
+      color: red;
+    }
+  </style>
 </head>
+
 <body>
+  <div id="terminal"></div>
+  <span id="status" class="disconnected">Connecting...</span>
 
-<span style="font-size: 1.4em;">pyxterm.js</span>&nbsp;&nbsp;&nbsp;
-<span style="font-size: small;">status: <span style="font-size: small;" id="status">connecting...</span></span>
-
-<div style="width: 100%; height: calc(100% - 50px);" id="terminal"></div>
-
-<p style="text-align: right; font-size: small;">
-  built by <a href="https://grassfedcode.com">Chad Smith</a> <a href="https://github.com/cs01">GitHub</a>
-</p>
-<!-- xterm -->
-<script src="https://unpkg.com/xterm@4.11.0/lib/xterm.js"></script>
-<script src="https://unpkg.com/xterm-addon-fit@0.5.0/lib/xterm-addon-fit.js"></script>
-<script src="https://unpkg.com/xterm-addon-web-links@0.4.0/lib/xterm-addon-web-links.js"></script>
-<script src="https://unpkg.com/xterm-addon-search@0.8.0/lib/xterm-addon-sear
-ch.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.min.js"></script>
-
-<script>
-  const term = new Terminal({
-        cursorBlink: true,
-        macOptionIsMeta: true,
-        scrollback: true,
+  <script>
+    const term = new Terminal({
+      cursorBlink: true,
+      macOptionIsMeta: true,
+      scrollback: true,
     });
-  // https://github.com/xtermjs/xterm.js/issues/2941
-  const fit = new FitAddon.FitAddon();
-  term.loadAddon(fit);
-  term.loadAddon(new WebLinksAddon.WebLinksAddon());
-  term.loadAddon(new SearchAddon.SearchAddon());
+    // https://github.com/xtermjs/xterm.js/issues/2941
+    const fit = new FitAddon.FitAddon();
+    term.loadAddon(fit);
+    term.loadAddon(new WebLinksAddon.WebLinksAddon());
 
-  term.open(document.getElementById('terminal'));
-  fit.fit()
-  term.resize(15, 50)
-  console.log(`size: ${term.cols} columns, ${term.rows} rows`)
-  fit.fit()
-  term.write("Welcome to pyxterm.js!\nhttps://github.com/cs01/pyxterm.js\n")
-  term.onKey((key, ev) => {
-    console.log("pressed key", key)
-    console.log("event", ev)
-    socket.emit("pty-input", {"input": key})
-  });
+    term.open(document.getElementById('terminal'));
+    fit.fit();
+    console.log(`Terminal size: ${term.cols} x ${term.rows}`);
 
-  const socket = io.connect('/pty');
-  const status = document.getElementById("status")
+    term.write('Hello from \x1B[1;3;31mxterm.js\x1B[0m $ ')
 
-  socket.on("pty-output", function(data){
-    console.log("new output", data)
-    term.write(data.output)
-  })
+    term.onKey((key, ev) => {
+      console.log("pressed key", key);
+      console.log("event", ev);
+      socket.emit("pty-input", { "input": key });
+    });
 
-  socket.on("connect", () => {
-    fitToscreen()
-    status.innerHTML = '<span style="background-color: lightgreen;">connected</span>'
+    const socket = io.connect('/pty');
+    const status = document.getElementById("status");
+
+    socket.on("pty-output", function (data) {
+      console.log("new output", data);
+      term.write(data.output);
+    });
+
+    socket.on("connect", () => {
+      fitToscreen();
+      status.textContent = "connected";
+      status.className = "connected";
+    });
+
+    socket.on("disconnect", () => {
+      status.textContent = "disconnected";
+      status.className = "disconnected";
+    });
+
+    function fitToscreen() {
+      fit.fit();
+      console.log(`Terminal size: ${term.cols} x ${term.rows}`);
+      socket.emit("resize", { "cols": term.cols, "rows": term.rows });
     }
-  )
 
-  socket.on("disconnect", () => {
-    status.innerHTML = '<span style="background-color: #ff8383;">disconnected</span>'
-  })
-
-  function fitToscreen(){
-    fit.fit()
-    socket.emit("resize", {"cols": term.cols, "rows": term.rows})
-  }
-
-  function debounce(func, wait_ms) {
-    let timeout
-    return function(...args) {
-      const context = this
-      clearTimeout(timeout)
-      timeout = setTimeout(() => func.apply(context, args), wait_ms)
+    function debounce(func, wait_ms) {
+      let timeout
+      return function (...args) {
+        const context = this;
+        clearTimeout(timeout);
+        timeout = setTimeout(() => func.apply(context, args), wait_ms);
+      }
     }
-  }
 
-  const wait_ms = 50;
-  window.onresize = debounce(fitToscreen, wait_ms)
+    const wait_ms = 50;
+    window.onresize = debounce(fitToscreen, wait_ms);
 
+    // run initial commands from cmd query parameter
+    const urlParams = new URLSearchParams(window.location.search);
+    const cmd = urlParams.get('cmd');
+    if (cmd) {
+      term.writeln(cmd);
+      socket.emit("pty-input", { "input": { "string": cmd + '\n' } });
+    }
 
-</script>
-
+  </script>
 </body>
+
 </html>

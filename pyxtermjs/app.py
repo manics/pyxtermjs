@@ -50,7 +50,11 @@ def pty_input(data):
     """
     if app.config["fd"]:
         # print("writing to ptd: %s" % data["input"])
-        os.write(app.config["fd"], data["input"]["key"].encode())
+        try:
+            s = data["input"]["key"]
+        except KeyError:
+            s = data["input"]["string"]
+        os.write(app.config["fd"], s.encode())
 
 
 @socketio.on("resize", namespace="/pty")
@@ -114,11 +118,14 @@ def main():
         default="",
         help="arguments to pass to command (i.e. --cmd-args='arg1 arg2 --flag')",
     )
-    args = parser.parse_args()
+    # If this is run in place of jupyter-* we may receive some standard jupyter args
+    args, other = parser.parse_known_args()
     if args.version:
         print(__version__)
         exit(0)
-    print(f"serving on http://127.0.0.1:{args.port}")
+    if other:
+        print(f"Ignoring arguments {other}")
+    print(f"Serving on http://{args.host}:{args.port}")
     app.config["cmd"] = [args.command] + shlex.split(args.cmd_args)
     socketio.run(app, debug=args.debug, port=args.port, host=args.host)
 
