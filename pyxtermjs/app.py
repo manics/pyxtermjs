@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 import argparse
-from flask import Flask, render_template
+from flask import Blueprint, Flask, render_template
 from flask_socketio import SocketIO
 import pty
 import os
@@ -20,6 +20,8 @@ app.config["fd"] = None
 app.config["child_pid"] = None
 socketio = SocketIO(app)
 
+bp = Blueprint("app", __name__)
+
 
 def set_winsize(fd, row, col, xpix=0, ypix=0):
     winsize = struct.pack("HHHH", row, col, xpix, ypix)
@@ -38,7 +40,7 @@ def read_and_forward_pty_output():
                 socketio.emit("pty-output", {"output": output}, namespace="/pty")
 
 
-@app.route("/")
+@bp.route("/")
 def index():
     return render_template("index.html")
 
@@ -126,6 +128,8 @@ def main():
     if other:
         print(f"Ignoring arguments {other}")
     print(f"Serving on http://{args.host}:{args.port}")
+
+    app.register_blueprint(bp, url_prefix=os.getenv("JUPYTERHUB_SERVICE_PREFIX"))
     app.config["cmd"] = [args.command] + shlex.split(args.cmd_args)
     socketio.run(app, debug=args.debug, port=args.port, host=args.host)
 
