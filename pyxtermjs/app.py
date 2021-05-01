@@ -104,7 +104,7 @@ def main():
     )
     parser.add_argument("-p", "--port", default=5000, help="port to run server on")
     parser.add_argument(
-        "--host",
+        "--host", "--ip",
         default="127.0.0.1",
         help="host to run server on (use 0.0.0.0 to allow access from other hosts)",
     )
