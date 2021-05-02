@@ -14,11 +14,17 @@ import shlex
 
 __version__ = "0.4.0.2"
 
+# Ideally we'd use Flask Blueprints throughout, but it's not trivial to get that
+# working with SocketIO:
+# https://gist.github.com/astrolox/445e84068d12ed9fa28f277241edf57b
+
+PREFIX = os.getenv("JUPYTERHUB_SERVICE_PREFIX", "/").rstrip("/") + "/"
+
 app = Flask(__name__, template_folder=".", static_folder=".", static_url_path="")
 app.config["SECRET_KEY"] = "secret!"
 app.config["fd"] = None
 app.config["child_pid"] = None
-socketio = SocketIO(app)
+socketio = SocketIO(app, path=PREFIX + "socket.io")
 
 bp = Blueprint("app", __name__)
 
@@ -129,7 +135,7 @@ def main():
         print(f"Ignoring arguments {other}")
     print(f"Serving on http://{args.host}:{args.port}")
 
-    app.register_blueprint(bp, url_prefix=os.getenv("JUPYTERHUB_SERVICE_PREFIX"))
+    app.register_blueprint(bp, url_prefix=PREFIX)
     app.config["cmd"] = [args.command] + shlex.split(args.cmd_args)
     socketio.run(app, debug=args.debug, port=args.port, host=args.host)
 
