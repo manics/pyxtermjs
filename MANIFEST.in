@@ -1,2 +1,3 @@
 include README.md LICENSE
-recursive-include pyxtermjs *
+recursive-include terminado_single/static *
+recursive-include terminado_single/templates *
