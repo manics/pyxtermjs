@@ -1,7 +1,6 @@
 """A single common terminal for all websockets.
 """
 import argparse
-import logging
 import os.path
 import shlex
 import sys
@@ -95,7 +94,7 @@ def main(argv=None):
         )
 
     if args.debug:
-        tornado.options.options.logging = 'debug'
+        tornado.options.options.logging = "debug"
     tornado.log.enable_pretty_logging()
     # tornado.log.app_log.debug('test debug message')
 

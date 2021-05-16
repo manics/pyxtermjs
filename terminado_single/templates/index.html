@@ -1,175 +1,164 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Terminado</title>
 
-<head>
-  <meta charset="utf-8">
-  <title>Terminado</title>
+    <link rel="stylesheet" href="{{ app_static('xterm-4.11.0/xterm.css') }}" />
+    <script src="{{ app_static('xterm-4.11.0/xterm.js') }}"></script>
+    <script src="{{ app_static('xterm-addon-fit-0.5.0/xterm-addon-fit.js') }}"></script>
+    <script src="{{ app_static('xterm-addon-web-links-0.4.0/xterm-addon-web-links.js') }}"></script>
 
-  <link rel="stylesheet" href="{{ app_static('xterm-4.11.0/xterm.css') }}" />
-  <script src="{{ app_static('xterm-4.11.0/xterm.js') }}"></script>
-  <script src="{{ app_static('xterm-addon-fit-0.5.0/xterm-addon-fit.js') }}"></script>
-  <script src="{{ app_static('xterm-addon-web-links-0.4.0/xterm-addon-web-links.js') }}"></script>
+    <script>
+      var DEBUG = false;
+      const RECONNECT_DELAY_MAX = 5000;
+      const RECONNECT_DELAY_INC = 500;
+      var RECONNECT_DELAY = 0;
 
-  <script>
-    var DEBUG = false;
-    const RECONNECT_DELAY_MAX = 5000;
-    const RECONNECT_DELAY_INC = 500;
-    var RECONNECT_DELAY = 0;
+      var terminal;
+      var socket;
+      var run_start_commands = true;
 
-    var terminal;
-    var socket;
-    var run_start_commands = true;
+      function make_websocket(term, status, ws_url) {
+        const ws = new WebSocket(ws_url);
 
-    function make_websocket(term, status, ws_url) {
-      const ws = new WebSocket(ws_url);
+        ws.onopen = function (event) {
+          console.log(`Terminal size: ${term.cols} x ${term.rows}`);
+          ws.send(JSON.stringify(["set_size", term.rows, term.cols]));
 
-      ws.onopen = function (event) {
-        console.log(`Terminal size: ${term.cols} x ${term.rows}`);
-        ws.send(JSON.stringify(["set_size", term.rows, term.cols]));
+          term.onData(function (data) {
+            ws.send(JSON.stringify(["stdin", data]));
+          });
 
-        term.onData(function (data) {
-          ws.send(JSON.stringify(['stdin', data]));
-        });
+          term.onTitleChange(function (title) {
+            document.title = title;
+          });
 
-        term.onTitleChange(function (title) {
-          document.title = title;
-        });
+          ws.onmessage = function (event) {
+            json_msg = JSON.parse(event.data);
+            if (DEBUG) {
+              console.log(json_msg);
+            }
+            switch (json_msg[0]) {
+              case "stdout":
+                term.write(json_msg[1]);
+                break;
+              case "disconnect":
+                term.write("\r\n\r\n[Finished... Terminado]\r\n");
+                break;
+            }
+          };
 
-        ws.onmessage = function (event) {
-          json_msg = JSON.parse(event.data);
-          if (DEBUG) {
-            console.log(json_msg);
-          }
-          switch (json_msg[0]) {
-            case "stdout":
-              term.write(json_msg[1]);
-              break;
-            case "disconnect":
-              term.write("\r\n\r\n[Finished... Terminado]\r\n");
-              break;
+          console.log(`Connected to ${ws_url}`);
+          RECONNECT_DELAY = 0;
+
+          status.classList.add("connected");
+          status.textContent = "Connected";
+
+          if (run_start_commands) {
+            run_start_commands = false;
+            start_commands();
           }
         };
 
-        console.log(`Connected to ${ws_url}`);
-        RECONNECT_DELAY = 0;
+        ws.onclose = function (event) {
+          status.classList.remove("connected");
+          status.textContent = "Disconnected";
 
-        status.classList.add("connected");
-        status.textContent = "Connected";
+          RECONNECT_DELAY = Math.min(
+            RECONNECT_DELAY + RECONNECT_DELAY_INC,
+            RECONNECT_DELAY_MAX
+          );
+          console.log(`Attempting reconnect in ${RECONNECT_DELAY} ms`);
+          setTimeout(() => {
+            make_websocket(term, status, ws_url);
+          }, RECONNECT_DELAY);
+        };
 
-        if (run_start_commands) {
-          run_start_commands = false;
-          start_commands();
-        }
-      };
+        ws.onerror = function (event) {
+          status.classList.remove("connected");
+          status.textContent = "Error";
+        };
 
-      ws.onclose = function (event) {
-        status.classList.remove("connected");
-        status.textContent = "Disconnected";
-
-        RECONNECT_DELAY = Math.min(RECONNECT_DELAY + RECONNECT_DELAY_INC, RECONNECT_DELAY_MAX);
-        console.log(`Attempting reconnect in ${RECONNECT_DELAY} ms`);
-        setTimeout(() => {
-          make_websocket(term, status, ws_url);
-        }, RECONNECT_DELAY);
-      };
-
-      ws.onerror = function (event) {
-        status.classList.remove("connected");
-        status.textContent = "Error";
-      };
-
-      socket = ws;
-    }
-
-    function make_terminal(element, fit) {
-      const term = new Terminal({
-        cursorBlink: true,
-        screenKeys: true,
-        scrollback: true,
-        useStyle: true
-      });
-      // https://github.com/xtermjs/xterm.js/issues/2941
-      term.loadAddon(fit);
-      term.loadAddon(new WebLinksAddon.WebLinksAddon());
-      term.open(element);
-      fit.fit();
-
-      terminal = term
-    }
-
-    function start_commands() {
-      terminal.write('Hello from \x1B[1;3;31mxterm.js\x1B[0m $ ')
-      // run initial commands from cmd query parameter
-      const urlParams = new URLSearchParams(window.location.search);
-      const cmd = urlParams.get('cmd');
-      if (cmd) {
-        console.log(`cmd: ${cmd}`);
-        socket.send(JSON.stringify(["stdin", `${cmd}\r\n`]));
+        socket = ws;
       }
-    }
 
-    function initialise() {
-      const protocol = (window.location.protocol.indexOf("https") === 0) ? "wss" : "ws";
-      const ws_url = protocol + "://" + window.location.host + window.location.pathname + "{{ws_url_path}}";
-
-      const fit = new FitAddon.FitAddon();
-      make_terminal(document.getElementById('terminal'), fit);
-      make_websocket(terminal, document.getElementById('status'), ws_url);
-
-      function fitToScreen() {
+      function make_terminal(element, fit) {
+        const term = new Terminal({
+          cursorBlink: true,
+          screenKeys: true,
+          scrollback: true,
+          useStyle: true,
+        });
+        // https://github.com/xtermjs/xterm.js/issues/2941
+        term.loadAddon(fit);
+        term.loadAddon(new WebLinksAddon.WebLinksAddon());
+        term.open(element);
         fit.fit();
-        console.log(`Terminal size: ${terminal.cols} x ${terminal.rows}`);
-        socket.send(JSON.stringify(["set_size", terminal.rows, terminal.cols]));
-      };
-      window.addEventListener('resize', fitToScreen);
-    };
 
-    window.addEventListener('load', initialise);
-  </script>
+        terminal = term;
+      }
 
-  <style>
-    html {
-      font-family: sans-serif;
-    }
+      function start_commands() {
+        terminal.write("Hello from \x1B[1;3;31mxterm.js\x1B[0m $ ");
+        // run initial commands from cmd query parameter
+        const urlParams = new URLSearchParams(window.location.search);
+        const cmd = urlParams.get("cmd");
+        if (cmd) {
+          console.log(`cmd: ${cmd}`);
+          socket.send(JSON.stringify(["stdin", `${cmd}\r\n`]));
+        }
+      }
 
-    html,
-    body {
-      height: 100%;
-    }
+      function initialise() {
+        const protocol =
+          window.location.protocol.indexOf("https") === 0 ? "wss" : "ws";
+        const ws_url = `${protocol}://${window.location.host}${window.location.pathname}{{ws_url_path}}`;
 
-    #terminal {
-      height: calc(100% - 50px);
-    }
+        const fit = new FitAddon.FitAddon();
+        make_terminal(document.getElementById("terminal"), fit);
+        make_websocket(terminal, document.getElementById("status"), ws_url);
 
-    #status {
-      font-size: small;
-      color: red;
-    }
+        function fitToScreen() {
+          fit.fit();
+          console.log(`Terminal size: ${terminal.cols} x ${terminal.rows}`);
+          socket.send(
+            JSON.stringify(["set_size", terminal.rows, terminal.cols])
+          );
+        }
+        window.addEventListener("resize", fitToScreen);
+      }
 
-    #status.connected {
-      color: green;
-    }
-  </style>
-</head>
+      window.addEventListener("load", initialise);
+    </script>
 
-<body>
+    <style>
+      html {
+        font-family: sans-serif;
+      }
 
-  <div id="terminal"></div>
-  <span id="status">Connecting...</span>
+      html,
+      body {
+        height: 100%;
+      }
 
-  <script>
+      #terminal {
+        height: calc(100% - 50px);
+      }
 
-    // term.write('Hello from \x1B[1;3;31mxterm.js\x1B[0m $ ')
+      #status {
+        font-size: small;
+        color: red;
+      }
 
-    // // run initial commands from cmd query parameter
-    // const urlParams = new URLSearchParams(window.location.search);
-    // const cmd = urlParams.get('cmd');
-    // if (cmd) {
-    //   term.writeln(cmd);
-    //   socket.emit("pty-input", { "input": { "string": cmd + '\n' } });
-    // }
+      #status.connected {
+        color: green;
+      }
+    </style>
+  </head>
 
-  </script>
-</body>
-
+  <body>
+    <div id="terminal"></div>
+    <span id="status">Connecting...</span>
+  </body>
 </html>
